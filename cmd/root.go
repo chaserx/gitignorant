@@ -5,11 +5,16 @@ package cmd
 
 import (
 	"context"
+	"io/fs"
 	"os"
 
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
+
+// TemplateFS holds the embedded gitignore template filesystem.
+// Set by main before calling Execute.
+var TemplateFS fs.FS
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
