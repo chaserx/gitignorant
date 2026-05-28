@@ -9,6 +9,7 @@ graph TB
     subgraph "CLI Layer"
         Root["ig (root command)"]
         Ignore["ig ignore <languages...>"]
+        List["ig list"]
     end
 
     subgraph "Internal Packages"
@@ -22,8 +23,10 @@ graph TB
     end
 
     Root --> Ignore
+    Root --> List
     Ignore --> Template
     Ignore --> Gitignore
+    List --> Template
     Template --> EmbedFS
     Gitignore --> DotGitignore
 ```
@@ -38,8 +41,11 @@ Built with [Cobra](https://github.com/spf13/cobra) and [Charmbracelet fang](http
 |---------|-------|-------------|
 | `ig` | `ig` | Root command, prints help |
 | `ig ignore` | `ig ignore go python node` | Generate/update `.gitignore` for given languages |
+| `ig list` | `ig list` | List available templates (sorted, with source tags) |
 
-The `ignore` command (alias: `i`) accepts one or more language/framework names and orchestrates the full workflow: load templates, resolve matches, deduplicate against existing `.gitignore`, preview changes, and write.
+The `ignore` command (alias: `i`) accepts one or more language/framework names and orchestrates the full workflow: load templates, resolve matches, deduplicate against existing `.gitignore`, preview changes, and write. Arguments resolve by base name, full relative path, or trailing path segment (all case-insensitive); an ambiguous base name resolves to the priority winner and prints a warning naming the alternatives.
+
+The `list` command (alias: `ls`) prints the available templates, sorted alphabetically. Unique names are shown by their base name; names that collide across sources are shown by their full path so each remains visible and selectable. Output is TTY-aware: at a terminal it aligns tokens into a column with a `(source)` tag (`root`/`Global`/`community`); when piped or redirected it emits bare tokens, one per line, so it composes with `grep`/`fzf`/`less` and feeds back into `ig ignore`.
 
 ### Template Package (`internal/template/`)
 
@@ -47,13 +53,16 @@ Responsible for loading and matching gitignore templates from the embedded files
 
 **Types:**
 
-- `Template` — holds a template's `Name` (e.g., "Go") and `Content` (the raw gitignore text)
+- `Template` — holds a template's `Name` (e.g., "Go"), `Content` (the raw gitignore text), `Source` (`"root"`, `"Global"`, or `"community"`), and `Path` (relative path within `gitignore/` without the extension, e.g. `community/AWS/SAM`)
+- `Resolution` — the outcome of resolving one argument: the `Query` and all `Matches` in priority order. `Selected()` returns the priority winner; `Ambiguous()` reports whether more than one template matched.
+- `CatalogEntry` — a template prepared for `ig list`: a display `Token` (base name, or full path when the name collides) and its `Source`.
 
 **Functions:**
 
-- `LoadAll(fs.FS)` — walks the embedded `gitignore/` directory in priority order: root, `Global/`, `community/`. Returns a flat list of templates.
-- `Match([]Template, string)` — case-insensitive exact match, returns the first hit (respecting priority order).
-- `Resolve([]Template, []string)` — splits user arguments into matched templates and unmatched names.
+- `LoadAll(fs.FS)` — walks the embedded `gitignore/` directory in priority order: root, `Global/`, `community/`. Returns a flat list of templates, each tagged with its `Source` and `Path`.
+- `MatchAll([]Template, string)` — returns every template matching a query (by base name, full path, or trailing path segment; case-insensitive, backslashes normalized), in priority order. `Match` returns just the first.
+- `ResolveAll([]Template, []string)` — resolves each argument to a `Resolution` (preserving order), exposing ambiguity. `Resolve` is the simpler split into matched winners + unmatched names.
+- `Catalog([]Template)` — one `CatalogEntry` per template, sorted alphabetically by token; unique names render as the base name, colliding names as their full path. Used by `ig list`.
 
 **Template Priority:**
 
