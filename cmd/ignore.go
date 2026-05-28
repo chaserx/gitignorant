@@ -36,8 +36,26 @@ func runIgnore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("gitignore templates not found: %w", err)
 	}
 
-	// 2. Resolve arguments against available templates.
-	matched, unmatched := tmpl.Resolve(templates, args)
+	// 2. Resolve arguments against available templates, warning on ambiguity.
+	var matched []tmpl.Template
+	var unmatched []string
+	for _, r := range tmpl.ResolveAll(templates, args) {
+		sel, ok := r.Selected()
+		if !ok {
+			unmatched = append(unmatched, r.Query)
+			continue
+		}
+		if r.Ambiguous() {
+			alts := make([]string, 0, len(r.Matches)-1)
+			for _, m := range r.Matches[1:] {
+				alts = append(alts, m.Path)
+			}
+			fmt.Fprintf(os.Stderr,
+				"warning: %q matches %d templates; using %s. Disambiguate with a path: %s\n",
+				r.Query, len(r.Matches), sel.Path, strings.Join(alts, ", "))
+		}
+		matched = append(matched, sel)
+	}
 
 	// 3. Handle unmatched arguments.
 	if len(unmatched) > 0 {
